@@ -11,6 +11,7 @@
 const SHA256 = require('crypto-js/sha256');
 const BlockClass = require('./block.js');
 const bitcoinMessage = require('bitcoinjs-message');
+const { response } = require('express');
 
 class Blockchain {
 
@@ -64,25 +65,23 @@ class Blockchain {
     _addBlock(block) {
         let self = this;
         return new Promise(async (resolve, reject) => {
-           let blockObj = block ;
-           let height = await self.getChainHeight();
-           blockObj.time = new Date().getTime().toString().slice(0,-3);
+           this.getChainHeight().then(response=>{
+               block.height = self.height +1;
+               self.height = self.height+1;
+               block.time = new Date().getTime().toString().slice(0,-3);
+               block.previousBlockHash = null;
 
-           if(height>= 0){
-               blockObj.height = height + 1;
-               let previousHash = self.chain[self.height];
-               blockObj.hash = SHA256(JSON.stringify(blockObj)).toString();
-               self.chain.push(blockObj);
-               self.height = self.chain.length - 1;
-               resolve(blockObj);
-           }
-           else{
-               blockObj.height = height + 1;
-               blockObj.hash = SHA256(JSON.stringify(blockObj)).toString();
-               self.chain.push(blockObj);
-               self.height = self.chain.length - 1;
-               resolve(blockObj);
-           }
+               if(block.height > 0){
+                   this.getBlockByHeight(block.height-1).then(response=>{
+                       block.previousBlockHash = response.hash;
+                       block.hash = SHA256(JSON.stringify(block)).toString();
+                       resolve(self.chain.push(block));
+                   })
+               }else{
+                   block.hash = SHA256(JSON.stringify(block)).toString();
+                   resolve(self.chain.push(block));
+               }
+           })
         });
     }
 
@@ -123,14 +122,14 @@ class Blockchain {
         return new Promise(async (resolve, reject) => {
             let time = parseInt(message.split(':')[1]);
             let currentTime = parseInt(new Date().getTime().toString().slice(0,-3));
-            if((time + 5*60*1000) >= currentTime){
+            if(currentTime - time < 300){
                 if(bitcoinMessage.verify(message,address,signature)){
                     let block = new BlockClass.Block({
                         owner: address,
                         star : star
                     });
-                    let addblock = self._addBlock(block);
-                    resolve(addblock);
+                    await this._addBlock(block);
+                    resolve(block);
                 }else{
                     reject("Signature is not valid");
                 }
